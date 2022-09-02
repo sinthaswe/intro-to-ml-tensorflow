@@ -1,60 +1,52 @@
-import argparse
 import tensorflow as tf
-import tensorflow_datasets as tfds
-import tensorflow_hub as hub
+import tensorflow_hub as tfhub
 import numpy as np
-import matplotlib.pyplot as plt
 import json
-import glob
-from PIL import Image
+import PIL
+import argparse
 
-image_size = 224
+img_size = 224
 
-def process_image(image):
-    image = tf.convert_to_tensor(image)
-    image = tf.image.resize(image, (image_size, image_size))
-    image /= 255
-    image = image.numpy()
-    return image
+def process_img(img):
+    img = tf.convert_to_tensor(img)
+    img = tf.image.resize(img, (img_size, img_size))
+    img /= 255
+    img = img.numpy()
+    return img
 
-def predict(image_path, model, top_k):
-    im = Image.open(image_path)
-    im_arr = np.asarray(im)
-    processed_im = process_image(im_arr)
-    processed_im_batch = np.expand_dims(processed_im, axis=0)
-    prediction = model.predict(processed_im_batch)
-    probs, classes = tf.math.top_k(prediction,top_k)
-    probs = probs.numpy().squeeze()
-    classes_label = classes.numpy().squeeze()
-    classes=[class_names[str(value+1)] for value in classes_label]
-
-    return probs, classes
-
+def predict(img_path, model, top_k):
+    image = PIL.Image.open(img_path)
+    image = np.asarray(image)
+    image = process_img(image)
+    image = np.expand_dims(image, axis=0)
+    prediction = model.predict(image)
+    k_values, k_indices = tf.math.top_k(prediction, top_k)
+    k_values = k_values.numpy()
+    k_indices = k_indices.numpy()
+    return k_values, k_indices
 
 if __name__ == '__main__':
-    print('predict.py, running')
-
     parser = argparse.ArgumentParser()
-    parser.add_argument('image_path')
-    parser.add_argument('pretrained_model')
-    parser.add_argument('--top_k',type=int,default=5)
-    parser.add_argument('--category_names',default='label_map.json')
-
+    parser.add_argument('img_path')
+    parser.add_argument('h5')
+    parser.add_argument('top_k',type=int,default=5)
+    parser.add_argument('label_map',type=str,default='label_map.json')
     args = parser.parse_args()
-    print(args)
-    print('arg1:', args.image_path)
-    print('arg2:', args.pretrained_model)
-    print('top_k:', args.top_k)
-    print('category_names:', args.category_names)
 
-    with open(args.category_names, 'r') as f:
-        class_names = json.load(f)
+    with open(args.label_map, 'r') as f:
+        label_map = json.load(f)
 
-    image_path = args.image_path
-    model = tf.keras.models.load_model(args.pretrained_model ,custom_objects={'KerasLayer':hub.KerasLayer} )
+    img_path = args.img_path
+    model = tf.keras.models.load_model(args.h5 ,custom_objects={'KerasLayer':tfhub.KerasLayer} )
     top_k = args.top_k
+    k_values, k_indices = predict(img_path, model, top_k)
+    probs = k_values.squeeze()
 
-    probs, classes = predict(image_path, model, top_k)
+    print('\nClasses , Probabilities\n')
 
-    print('Predicted Flower Name: \n',classes)
-    print('Probabilities: \n ', probs)
+    j = 0
+    for i in k_indices[0]:
+        print(label_map[str(i+1)], ',' ,probs[j])
+        j += 1
+
+    print('\n')
